@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
+import { checkForAppUpdates } from './services/updater';
 import {
   Shield, Clock, Smartphone, Globe, MapPin, AlertTriangle, 
   Battery, Wifi, Lock, Unlock, Moon, BookOpen, CheckCircle, 
-  XCircle, Plus, Search, Filter, RefreshCw, ChevronRight, User, QrCode, X
+  XCircle, Plus, Search, Filter, RefreshCw, ChevronRight, User, QrCode, X, Download
 } from 'lucide-react';
 
 const SERVER_URLS = [
@@ -22,6 +23,13 @@ export default function App() {
   const [newDomain, setNewDomain] = useState('');
   const [appSearch, setAppSearch] = useState('');
   const [connectionStatusText, setConnectionStatusText] = useState('Iniciando conexão...');
+  const [updateInfo, setUpdateInfo] = useState(null);
+
+  useEffect(() => {
+    checkForAppUpdates().then(info => {
+      if (info?.hasUpdate) setUpdateInfo(info);
+    });
+  }, []);
   
   // Modal de Pareamento QR Code
   const [showPairModal, setShowPairModal] = useState(false);
@@ -168,6 +176,32 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* BANNER DE ATUALIZAÇÃO DO GITHUB */}
+      {updateInfo && (
+        <div style={{
+          padding: '16px 20px', borderRadius: '16px', marginBottom: '24px',
+          background: 'linear-gradient(135deg, var(--accent-blue), var(--accent-purple))',
+          color: 'white', display: 'flex', flexWrap: 'wrap', alignItems: 'center',
+          justifyContent: 'space-between', gap: '12px', boxShadow: '0 8px 24px rgba(59, 130, 246, 0.3)'
+        }}>
+          <div>
+            <h4 style={{ fontSize: '1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Download size={20} /> Nova versão v{updateInfo.latestVersion} disponível no GitHub!
+            </h4>
+            <p style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '2px' }}>{updateInfo.releaseNotes}</p>
+          </div>
+          <a 
+            href={updateInfo.downloadUrl} 
+            target="_blank" 
+            rel="noreferrer" 
+            className="btn" 
+            style={{ background: 'white', color: '#0f172a', fontWeight: 800 }}
+          >
+            Baixar e Atualizar APK
+          </a>
+        </div>
+      )}
 
       {/* MODAL DE PAREAMENTO QR CODE */}
       {showPairModal && pairingData && (
