@@ -1,0 +1,9 @@
+{
+  "appId": "com.guardianshield.parent",
+  "appName": "GuardianShield Pai",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  }
+}
