@@ -32,18 +32,22 @@ export default function App() {
   const [pairingData, setPairingData] = useState(null);
   const [isGeneratingPairing, setIsGeneratingPairing] = useState(false);
 
-  // Tratamento nativo do botão Voltar do Android
+  // Tratamento nativo do botão Voltar do Android (não fecha o app ao voltar)
   useEffect(() => {
-    const backListener = CapApp.addListener('backButton', () => {
+    const handleBack = () => {
       if (showPairModal) {
         setShowPairModal(false);
       } else if (activeTab !== 'time') {
         setActiveTab('time');
       }
-    });
+    };
+
+    const backListener = CapApp.addListener('backButton', handleBack);
+    document.addEventListener('backButton', handleBack);
 
     return () => {
       backListener.then(l => l.remove());
+      document.removeEventListener('backButton', handleBack);
     };
   }, [showPairModal, activeTab]);
 
