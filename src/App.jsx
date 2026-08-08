@@ -51,11 +51,12 @@ export default function App() {
     };
   }, [showPairModal, activeTab]);
 
-  const handleOpenDownload = async (url) => {
+  const handleOpenDownload = (url) => {
+    console.log('Iniciando download do APK:', url);
     try {
-      await Browser.open({ url });
+      window.open(url, '_system') || (window.location.href = url);
     } catch (e) {
-      window.open(url, '_system');
+      window.location.href = url;
     }
   };
 
