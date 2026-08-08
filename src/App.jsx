@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
+import { Browser } from '@capacitor/browser';
 import { checkForAppUpdates } from './services/updater';
 import {
   Shield, Clock, Smartphone, Globe, MapPin, AlertTriangle, 
@@ -24,6 +25,14 @@ export default function App() {
   const [appSearch, setAppSearch] = useState('');
   const [connectionStatusText, setConnectionStatusText] = useState('Iniciando conexão...');
   const [updateInfo, setUpdateInfo] = useState(null);
+
+  const handleOpenDownload = async (url) => {
+    try {
+      await Browser.open({ url });
+    } catch (e) {
+      window.open(url, '_system') || (window.location.href = url);
+    }
+  };
 
   useEffect(() => {
     checkForAppUpdates().then(info => {
@@ -191,15 +200,13 @@ export default function App() {
             </h4>
             <p style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '2px' }}>{updateInfo.releaseNotes}</p>
           </div>
-          <a 
-            href={updateInfo.downloadUrl} 
-            target="_blank" 
-            rel="noreferrer" 
+          <button 
+            onClick={() => handleOpenDownload(updateInfo.downloadUrl)} 
             className="btn" 
-            style={{ background: 'white', color: '#0f172a', fontWeight: 800 }}
+            style={{ background: 'white', color: '#0f172a', fontWeight: 800, cursor: 'pointer' }}
           >
             Baixar e Atualizar APK
-          </a>
+          </button>
         </div>
       )}
 
