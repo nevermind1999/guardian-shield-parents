@@ -221,13 +221,29 @@ export default function App() {
             </h4>
             <p style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '2px' }}>{updateInfo.releaseNotes}</p>
           </div>
-          <button 
-            onClick={() => handleOpenDownload(updateInfo.downloadUrl)} 
-            className="btn" 
-            style={{ background: 'white', color: '#0f172a', fontWeight: 800, cursor: 'pointer' }}
-          >
-            Baixar e Atualizar APK
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button 
+              onClick={() => {
+                handleOpenDownload(updateInfo.downloadUrl);
+                if (updateInfo.latestSha) localStorage.setItem('dismissed_update_sha', updateInfo.latestSha);
+                setUpdateInfo(null);
+              }} 
+              className="btn" 
+              style={{ background: 'white', color: '#0f172a', fontWeight: 800, cursor: 'pointer' }}
+            >
+              Baixar e Atualizar APK
+            </button>
+            <button 
+              onClick={() => {
+                if (updateInfo.latestSha) localStorage.setItem('dismissed_update_sha', updateInfo.latestSha);
+                setUpdateInfo(null);
+              }}
+              style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: '4px' }}
+              title="Dispensar aviso"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
       )}
 
