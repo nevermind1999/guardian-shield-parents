@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
 import { Browser } from '@capacitor/browser';
+import { App as CapApp } from '@capacitor/app';
 import { checkForAppUpdates } from './services/updater';
 import {
   Shield, Clock, Smartphone, Globe, MapPin, AlertTriangle, 
@@ -25,13 +26,30 @@ export default function App() {
   const [appSearch, setAppSearch] = useState('');
   const [connectionStatusText, setConnectionStatusText] = useState('Iniciando conexão...');
   const [updateInfo, setUpdateInfo] = useState(null);
+  
+  // Modal de Pareamento QR Code
+  const [showPairModal, setShowPairModal] = useState(false);
+  const [pairingData, setPairingData] = useState(null);
+  const [isGeneratingPairing, setIsGeneratingPairing] = useState(false);
 
-  const handleOpenDownload = async (url) => {
-    try {
-      await Browser.open({ url });
-    } catch (e) {
-      window.open(url, '_system') || (window.location.href = url);
-    }
+  // Tratamento nativo do botão Voltar do Android
+  useEffect(() => {
+    const backListener = CapApp.addListener('backButton', () => {
+      if (showPairModal) {
+        setShowPairModal(false);
+      } else if (activeTab !== 'time') {
+        setActiveTab('time');
+      }
+    });
+
+    return () => {
+      backListener.then(l => l.remove());
+    };
+  }, [showPairModal, activeTab]);
+
+  const handleOpenDownload = (url) => {
+    // Download direto do APK sem navegar para o GitHub
+    window.location.href = url;
   };
 
   useEffect(() => {
@@ -39,11 +57,6 @@ export default function App() {
       if (info?.hasUpdate) setUpdateInfo(info);
     });
   }, []);
-  
-  // Modal de Pareamento QR Code
-  const [showPairModal, setShowPairModal] = useState(false);
-  const [pairingData, setPairingData] = useState(null);
-  const [isGeneratingPairing, setIsGeneratingPairing] = useState(false);
 
   useEffect(() => {
     let activeSocket = null;
@@ -186,7 +199,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* BANNER DE ATUALIZAÇÃO DO GITHUB */}
+      {/* BANNER DE ATUALIZAÇÃO DIRETA */}
       {updateInfo && (
         <div style={{
           padding: '16px 20px', borderRadius: '16px', marginBottom: '24px',
@@ -196,7 +209,7 @@ export default function App() {
         }}>
           <div>
             <h4 style={{ fontSize: '1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Download size={20} /> Nova versão v{updateInfo.latestVersion} disponível no GitHub!
+              <Download size={20} /> Nova versão {updateInfo.latestVersion} disponível!
             </h4>
             <p style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '2px' }}>{updateInfo.releaseNotes}</p>
           </div>
