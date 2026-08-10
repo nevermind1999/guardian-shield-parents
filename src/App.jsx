@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
-import { Browser } from '@capacitor/browser';
+import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { checkForAppUpdates } from './services/updater';
 import {
@@ -60,10 +60,14 @@ export default function App() {
 
   const handleOpenDownload = (url) => {
     console.log('Iniciando download do APK:', url);
-    try {
-      window.open(url, '_system') || (window.location.href = url);
-    } catch (e) {
-      window.location.href = url;
+    // Baixa via DownloadManager nativo (notificação de progresso do próprio Android,
+    // sem abrir navegador) e instala sozinho ao concluir — ver UpdaterModule em
+    // MainActivity.java. Antes usava window.open('_system'), que abria o navegador
+    // como app separado e fazia o botão voltar sair do GuardianShield.
+    if (Capacitor.isNativePlatform() && Capacitor.Plugins?.UpdaterModule?.downloadAndInstall) {
+      Capacitor.Plugins.UpdaterModule.downloadAndInstall({ url, fileName: 'GuardianShield-Pai-atualizacao.apk' });
+    } else {
+      window.open(url, '_blank');
     }
   };
 

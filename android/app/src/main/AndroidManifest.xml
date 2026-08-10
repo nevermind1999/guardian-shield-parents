@@ -39,4 +39,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- UpdaterModule: instalar o APK de atualização baixado via DownloadManager
+         (não é uma permissão perigosa em tempo de execução — o usuário concede uma
+         vez em Configurações se ainda não tiver permitido "instalar apps desconhecidos"
+         pra este app; ver promptInstallDownloadedUpdate em MainActivity.java). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>
