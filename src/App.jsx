@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
 import { Capacitor } from '@capacitor/core';
@@ -60,6 +60,23 @@ export default function App() {
   const [showPairModal, setShowPairModal] = useState(false);
   const [pairingData, setPairingData] = useState(null);
   const [isGeneratingPairing, setIsGeneratingPairing] = useState(false);
+
+  // PIN de desbloqueio de emergência
+  const [pinInput, setPinInput] = useState('');
+  const [pinSavedNotice, setPinSavedNotice] = useState(false);
+
+  // "Forçar Atualização" de GPS — mostra spinner até a localização mudar de fato
+  // (o nativo busca uma leitura fresca no próximo poll, até ~1min) ou dar timeout.
+  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
+  const requestedAtLocationTimestampRef = useRef(null);
+  // Some o spinner assim que uma localização mais nova que a de quando o botão foi
+  // clicado chegar (via state:update) — sem precisar de nenhum evento novo pra isso.
+  // (state pode ser null antes do primeiro state:update, daí o optional chaining.)
+  useEffect(() => {
+    if (isRequestingLocation && state?.location?.lastUpdated !== requestedAtLocationTimestampRef.current) {
+      setIsRequestingLocation(false);
+    }
+  }, [state?.location?.lastUpdated, isRequestingLocation]);
 
   // Tratamento nativo do botão Voltar do Android (não fecha o app ao voltar)
   useEffect(() => {
@@ -235,10 +252,37 @@ export default function App() {
     setGeofenceModalOpen(null);
   };
 
-  const filteredApps = blockedApps.filter(a => 
-    a.name.toLowerCase().includes(appSearch.toLowerCase()) || 
+  const handleSaveUnlockPin = (e) => {
+    e.preventDefault();
+    if (pinInput.trim().length < 4) return;
+    socket?.emit('parent:set_unlock_pin', pinInput.trim());
+    setPinInput('');
+    setPinSavedNotice(true);
+    setTimeout(() => setPinSavedNotice(false), 3000);
+  };
+
+  // Pede uma leitura de GPS ativa no próximo poll do celular (~1min) em vez da última
+  // posição em cache — ver locationUpdateRequested/postInstalledApps no nativo.
+  const handleRequestLocationUpdate = () => {
+    requestedAtLocationTimestampRef.current = location.lastUpdated;
+    setIsRequestingLocation(true);
+    socket?.emit('parent:request_location_update');
+    setTimeout(() => setIsRequestingLocation(false), 75000);
+  };
+
+  const filteredApps = blockedApps.filter(a =>
+    a.name.toLowerCase().includes(appSearch.toLowerCase()) ||
     (a.category && a.category.toLowerCase().includes(appSearch.toLowerCase()))
   );
+
+  // Agrupa por categoria pra exibir em seções (Jogos primeiro — é o que mais importa
+  // bloquear —, depois Aplicativos, Sistema por último). Categoria vem do nativo
+  // (AppRepository.kt, via ApplicationInfo.FLAG_SYSTEM/category); apps sincronizados
+  // antes dessa feature caem em "Aplicativos" (fallback já existente no backend).
+  const APP_CATEGORY_ORDER = ['Jogos', 'Aplicativos', 'Sistema'];
+  const appsByCategory = APP_CATEGORY_ORDER
+    .map(category => ({ category, apps: filteredApps.filter(a => (a.category || 'Aplicativos') === category) }))
+    .filter(group => group.apps.length > 0);
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px 16px' }}>
@@ -481,6 +525,56 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* PIN DE DESBLOQUEIO DE EMERGÊNCIA — funciona mesmo com o celular da
+                criança offline: o hash é sincronizado pro aparelho e a checagem
+                acontece 100% localmente lá, sem depender de rede nenhuma. */}
+            <div className="glass-panel" style={{ padding: '24px' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', marginBottom: '8px' }}>
+                <Lock size={20} style={{ color: 'var(--accent-rose)' }} /> PIN de Desbloqueio de Emergência
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                Libera o aparelho da criança na hora, mesmo sem internet — útil se a
+                Pausa Geral, tarefa ou tempo esgotado travar o celular indevidamente.
+                O PIN nunca fica salvo em texto puro, nem aqui nem no aparelho da criança.
+              </p>
+
+              <div style={{ marginBottom: '16px' }}>
+                {screenTime.hasUnlockPin ? (
+                  <span className="badge badge-success">PIN CADASTRADO ✅</span>
+                ) : (
+                  <span className="badge badge-warning">NENHUM PIN CADASTRADO</span>
+                )}
+                {screenTime.lastPinUnlockAt && (
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+                    Último desbloqueio por PIN: {new Date(screenTime.lastPinUnlockAt).toLocaleString()}
+                  </p>
+                )}
+              </div>
+
+              <form onSubmit={handleSaveUnlockPin} style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Novo PIN (4-8 dígitos)"
+                  value={pinInput}
+                  onChange={(e) => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  style={{
+                    flex: 1, padding: '10px 14px', borderRadius: '10px',
+                    border: '1px solid var(--border-color)', background: 'var(--surface-2)',
+                    color: 'var(--text-primary)', outline: 'none', fontSize: '0.9rem', letterSpacing: '2px'
+                  }}
+                />
+                <button type="submit" className="btn btn-primary" disabled={pinInput.trim().length < 4}>
+                  Salvar PIN
+                </button>
+              </form>
+              {pinSavedNotice && (
+                <p style={{ fontSize: '0.8rem', color: 'var(--accent-emerald)', marginTop: '8px' }}>
+                  PIN salvo! Pode levar até 1 minuto para chegar no aparelho da criança.
+                </p>
+              )}
+            </div>
           </div>
         )}
 
@@ -516,40 +610,49 @@ export default function App() {
                 Nenhum aplicativo encontrado. Conecte o celular do filho para sincronizar a lista de aplicativos instalados.
               </p>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
-                {filteredApps.map(app => (
-                  <div 
-                    key={app.id} 
-                    style={{ 
-                      padding: '16px', borderRadius: '14px', 
-                      background: app.isBlocked ? 'rgba(244, 63, 94, 0.08)' : 'var(--surface-1)',
-                      border: `1px solid ${app.isBlocked ? 'rgba(244, 63, 94, 0.3)' : 'var(--border-color)'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ 
-                        width: '42px', height: '42px', borderRadius: '12px', 
-                        background: app.isBlocked ? 'rgba(244, 63, 94, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: app.isBlocked ? 'var(--accent-rose)' : 'var(--accent-blue)'
-                      }}>
-                        <Smartphone size={22} />
-                      </div>
-                      <div>
-                        <h4 style={{ fontSize: '0.95rem', fontWeight: 600 }}>{app.name}</h4>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{app.category || 'Aplicativo'}</span>
-                      </div>
-                    </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {appsByCategory.map(({ category, apps }) => (
+                  <div key={category}>
+                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      {category === 'Jogos' ? '🎮' : category === 'Sistema' ? '⚙️' : '📱'} {category} ({apps.length})
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+                      {apps.map(app => (
+                        <div
+                          key={app.id}
+                          style={{
+                            padding: '16px', borderRadius: '14px',
+                            background: app.isBlocked ? 'rgba(244, 63, 94, 0.08)' : 'var(--surface-1)',
+                            border: `1px solid ${app.isBlocked ? 'rgba(244, 63, 94, 0.3)' : 'var(--border-color)'}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{
+                              width: '42px', height: '42px', borderRadius: '12px',
+                              background: app.isBlocked ? 'rgba(244, 63, 94, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: app.isBlocked ? 'var(--accent-rose)' : 'var(--accent-blue)'
+                            }}>
+                              <Smartphone size={22} />
+                            </div>
+                            <div>
+                              <h4 style={{ fontSize: '0.95rem', fontWeight: 600 }}>{app.name}</h4>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{app.category || 'Aplicativo'}</span>
+                            </div>
+                          </div>
 
-                    <label className="switch">
-                      <input 
-                        type="checkbox" 
-                        checked={app.isBlocked} 
-                        onChange={() => handleToggleAppBlock(app.id, app.isBlocked)} 
-                      />
-                      <span className="slider"></span>
-                    </label>
+                          <label className="switch">
+                            <input
+                              type="checkbox"
+                              checked={app.isBlocked}
+                              onChange={() => handleToggleAppBlock(app.id, app.isBlocked)}
+                            />
+                            <span className="slider"></span>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -632,9 +735,21 @@ export default function App() {
         {activeTab === 'location' && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
             <div className="glass-panel" style={{ padding: '24px' }}>
-              <h3 style={{ fontSize: '1.1rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <MapPin size={20} style={{ color: 'var(--accent-rose)' }} /> Localização GPS em Tempo Real
-              </h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <MapPin size={20} style={{ color: 'var(--accent-rose)' }} /> Localização GPS em Tempo Real
+                </h3>
+                <button
+                  className="btn btn-ghost"
+                  style={{ padding: '8px 14px', fontSize: '0.8rem' }}
+                  onClick={handleRequestLocationUpdate}
+                  disabled={isRequestingLocation}
+                  title="Pede uma leitura de GPS ativa no aparelho da criança (pode levar até 1 minuto)"
+                >
+                  <RefreshCw size={14} style={isRequestingLocation ? { animation: 'spin 1s linear infinite' } : undefined} />
+                  {isRequestingLocation ? 'Atualizando...' : 'Forçar Atualização'}
+                </button>
+              </div>
 
               <div style={{ background: 'var(--surface-1)', padding: '16px', borderRadius: '12px', marginBottom: '16px' }}>
                 <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>

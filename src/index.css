@@ -231,3 +231,9 @@ input[type=range]::-webkit-slider-thumb {
   margin-top: -6px;
   box-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
 }
+
+/* Ícone girando — usado no botão "Forçar Atualização" de GPS enquanto aguarda */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
