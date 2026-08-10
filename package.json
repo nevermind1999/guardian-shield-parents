@@ -11,12 +11,14 @@
   "dependencies": {
     "@capacitor/android": "^8.5.0",
     "@capacitor/app": "^8.1.1",
-    "@capacitor/browser": "^8.0.4",
     "@capacitor/core": "^8.5.0",
+    "@capacitor/status-bar": "^8.0.3",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.378.0",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1",
     "socket.io-client": "^4.7.5"
   },
   "devDependencies": {

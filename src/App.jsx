@@ -3,10 +3,13 @@ import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { MapContainer, TileLayer, Marker, Circle } from 'react-leaflet';
+import GeofenceMapPicker from './GeofenceMapPicker';
 import { checkForAppUpdates } from './services/updater';
 import {
   Shield, Clock, Smartphone, Globe, MapPin, AlertTriangle,
-  Battery, Wifi, Lock, Unlock, Moon, BookOpen, CheckCircle,
+  Battery, Wifi, Lock, Unlock, Moon, Sun, BookOpen, CheckCircle,
   XCircle, Plus, Search, Filter, RefreshCw, ChevronRight, User, QrCode, X, Download,
   ListChecks, Camera, Trash2
 } from 'lucide-react';
@@ -28,6 +31,25 @@ export default function App() {
   const [connectionStatusText, setConnectionStatusText] = useState('Iniciando conexão...');
   const [updateInfo, setUpdateInfo] = useState(null);
   const [serverUrl, setServerUrl] = useState(null);
+  // Modal do mapa de cercas virtuais: null = fechado, {} = criando nova,
+  // objeto existente = editando (habilita o botão de excluir).
+  const [geofenceModalOpen, setGeofenceModalOpen] = useState(null);
+
+  // Modo claro/escuro: por padrão segue o tema do sistema (prefers-color-scheme);
+  // se a pessoa já trocou manualmente antes, essa escolha prevalece.
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem('guardianshield_theme');
+    if (saved) return saved;
+    return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('guardianshield_theme', theme);
+    if (Capacitor.isNativePlatform()) {
+      StatusBar.setStyle({ style: theme === 'light' ? Style.Light : Style.Dark }).catch(() => {});
+    }
+  }, [theme]);
+  const toggleTheme = () => setTheme(t => (t === 'light' ? 'dark' : 'light'));
 
   // Formulário de nova tarefa diária
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -204,6 +226,15 @@ export default function App() {
     socket?.emit('parent:respond_task', { taskId, approved, rejectedReason });
   };
 
+  const handleSaveGeofence = (gf) => {
+    socket?.emit('parent:save_geofence', gf);
+    setGeofenceModalOpen(null);
+  };
+  const handleDeleteGeofence = (id) => {
+    socket?.emit('parent:remove_geofence', { id });
+    setGeofenceModalOpen(null);
+  };
+
   const filteredApps = blockedApps.filter(a => 
     a.name.toLowerCase().includes(appSearch.toLowerCase()) || 
     (a.category && a.category.toLowerCase().includes(appSearch.toLowerCase()))
@@ -215,7 +246,7 @@ export default function App() {
       {/* HEADER / STATUS DA CRIANÇA */}
       <header className="glass-panel" style={{ padding: '20px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ width: '52px', height: '52px', borderRadius: '16px', background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+          <div style={{ width: '52px', height: '52px', borderRadius: '16px', background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-on-accent)' }}>
             <User size={28} />
           </div>
           <div>
@@ -233,6 +264,15 @@ export default function App() {
 
         {/* BOTOES DE ACAO E PAREAMENTO */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button
+            className="btn btn-ghost"
+            onClick={toggleTheme}
+            title={theme === 'light' ? 'Mudar para modo escuro' : 'Mudar para modo claro'}
+            style={{ padding: '10px' }}
+          >
+            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+          </button>
+
           <button className="btn btn-primary" onClick={handleGeneratePairingCode} disabled={isGeneratingPairing}>
             <QrCode size={18} /> {isGeneratingPairing ? 'Gerando QR...' : 'Parear Novo Aparelho'}
           </button>
@@ -252,7 +292,7 @@ export default function App() {
         <div style={{
           padding: '16px 20px', borderRadius: '16px', marginBottom: '24px',
           background: 'linear-gradient(135deg, var(--accent-blue), var(--accent-purple))',
-          color: 'white', display: 'flex', flexWrap: 'wrap', alignItems: 'center',
+          color: 'var(--text-on-accent)', display: 'flex', flexWrap: 'wrap', alignItems: 'center',
           justifyContent: 'space-between', gap: '12px', boxShadow: '0 8px 24px rgba(59, 130, 246, 0.3)'
         }}>
           <div>
@@ -278,7 +318,7 @@ export default function App() {
                 if (updateInfo.latestSha) localStorage.setItem('dismissed_update_sha', updateInfo.latestSha);
                 setUpdateInfo(null);
               }}
-              style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: '4px' }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-on-accent)', cursor: 'pointer', padding: '4px' }}
               title="Dispensar aviso"
             >
               <X size={20} />
@@ -291,7 +331,7 @@ export default function App() {
       {showPairModal && pairingData && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 10000,
-          background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)',
+          background: 'var(--overlay-scrim)', backdropFilter: 'blur(12px)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
         }}>
           <div className="glass-panel" style={{ padding: '28px', maxWidth: '420px', width: '100%', textAlign: 'center' }}>
@@ -310,7 +350,7 @@ export default function App() {
               <QRCodeSVG value={pairingData.qrPayload} size={200} />
             </div>
 
-            <div style={{ background: 'rgba(255,255,255,0.05)', padding: '12px', borderRadius: '12px', marginBottom: '16px' }}>
+            <div style={{ background: 'var(--surface-2)', padding: '12px', borderRadius: '12px', marginBottom: '16px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>CÓDIGO DE PAREAMENTO</span>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, letterSpacing: '4px', color: 'var(--accent-cyan)' }}>
                 {pairingData.pairingCode}
@@ -373,7 +413,7 @@ export default function App() {
                   <span>Uso Real Hoje: {screenTime.usedMinutesToday}m</span>
                   <span>Restante: {Math.max(0, screenTime.dailyLimitMinutes - screenTime.usedMinutesToday)}m</span>
                 </div>
-                <div style={{ height: '10px', background: 'rgba(255,255,255,0.1)', borderRadius: '5px', overflow: 'hidden' }}>
+                <div style={{ height: '10px', background: 'var(--surface-3)', borderRadius: '5px', overflow: 'hidden' }}>
                   <div style={{ 
                     height: '100%', 
                     width: `${Math.min(100, (screenTime.usedMinutesToday / screenTime.dailyLimitMinutes) * 100)}%`,
@@ -408,7 +448,7 @@ export default function App() {
               </h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ background: 'var(--surface-1)', padding: '16px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <Moon size={22} style={{ color: 'var(--accent-purple)' }} />
                     <div>
@@ -424,7 +464,7 @@ export default function App() {
                   </label>
                 </div>
 
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ background: 'var(--surface-1)', padding: '16px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <BookOpen size={22} style={{ color: 'var(--accent-amber)' }} />
                     <div>
@@ -464,8 +504,8 @@ export default function App() {
                   onChange={(e) => setAppSearch(e.target.value)}
                   style={{
                     width: '100%', padding: '10px 12px 10px 38px', borderRadius: '10px',
-                    border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.05)',
-                    color: 'white', outline: 'none', fontSize: '0.9rem'
+                    border: '1px solid var(--border-color)', background: 'var(--surface-2)',
+                    color: 'var(--text-primary)', outline: 'none', fontSize: '0.9rem'
                   }}
                 />
               </div>
@@ -482,7 +522,7 @@ export default function App() {
                     key={app.id} 
                     style={{ 
                       padding: '16px', borderRadius: '14px', 
-                      background: app.isBlocked ? 'rgba(244, 63, 94, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                      background: app.isBlocked ? 'rgba(244, 63, 94, 0.08)' : 'var(--surface-1)',
                       border: `1px solid ${app.isBlocked ? 'rgba(244, 63, 94, 0.3)' : 'var(--border-color)'}`,
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between'
                     }}
@@ -526,7 +566,7 @@ export default function App() {
               </h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px', background: 'var(--surface-1)', borderRadius: '12px' }}>
                   <div>
                     <h4 style={{ fontSize: '0.95rem' }}>Bloquear Conteúdo Adulto</h4>
                     <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Filtro de sites impróprios e nocivos via DNS</p>
@@ -537,7 +577,7 @@ export default function App() {
                   </label>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px', background: 'var(--surface-1)', borderRadius: '12px' }}>
                   <div>
                     <h4 style={{ fontSize: '0.95rem' }}>Forçar SafeSearch</h4>
                     <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Google, YouTube e Bing em modo seguro</p>
@@ -563,8 +603,8 @@ export default function App() {
                   onChange={(e) => setNewDomain(e.target.value)}
                   style={{
                     flex: 1, padding: '10px 14px', borderRadius: '10px',
-                    border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.05)',
-                    color: 'white', outline: 'none', fontSize: '0.9rem'
+                    border: '1px solid var(--border-color)', background: 'var(--surface-2)',
+                    color: 'var(--text-primary)', outline: 'none', fontSize: '0.9rem'
                   }}
                 />
                 <button type="submit" className="btn btn-primary">
@@ -596,8 +636,8 @@ export default function App() {
                 <MapPin size={20} style={{ color: 'var(--accent-rose)' }} /> Localização GPS em Tempo Real
               </h3>
 
-              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '12px', marginBottom: '16px' }}>
-                <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'white' }}>
+              <div style={{ background: 'var(--surface-1)', padding: '16px', borderRadius: '12px', marginBottom: '16px' }}>
+                <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                   {location.address || 'Carregando coordenadas...'}
                 </p>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
@@ -608,32 +648,74 @@ export default function App() {
                 </p>
               </div>
 
-              <h4 style={{ fontSize: '0.95rem', marginBottom: '12px', fontWeight: 600 }}>Cercas Virtuais (Geofences)</h4>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h4 style={{ fontSize: '0.95rem', fontWeight: 600 }}>Cercas Virtuais (Geofences)</h4>
+                <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => setGeofenceModalOpen({})}>
+                  <Plus size={14} /> Nova Cerca
+                </button>
+              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {geofences.length === 0 && (
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Nenhuma cerca cadastrada ainda.</p>
+                )}
                 {geofences.map(gf => (
-                  <div key={gf.id} style={{ padding: '12px', borderRadius: '10px', background: 'rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <button
+                    key={gf.id}
+                    onClick={() => setGeofenceModalOpen(gf)}
+                    style={{
+                      padding: '12px', borderRadius: '10px', background: 'var(--surface-1)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', font: 'inherit', color: 'inherit'
+                    }}
+                  >
                     <div>
                       <h5 style={{ fontSize: '0.9rem' }}>{gf.name}</h5>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Raio: {gf.radiusMeters}m</span>
                     </div>
-                    <span className="badge badge-success">DENTRO DA CERCA</span>
-                  </div>
+                    {gf.status === 'inside' && <span className="badge badge-success">DENTRO DA CERCA</span>}
+                    {gf.status === 'outside' && <span className="badge badge-warning">FORA DA CERCA</span>}
+                    {gf.status === 'unknown' && <span className="badge" style={{ background: 'var(--surface-3)', color: 'var(--text-muted)' }}>SEM GPS</span>}
+                  </button>
                 ))}
               </div>
             </div>
 
-            {/* INTERACTIVE MAP FRAME */}
+            {/* MAPA COM A LOCALIZAÇÃO ATUAL + TODAS AS CERCAS (visualização; toque numa
+                cerca na lista ao lado, ou em "Nova Cerca", pra editar no mapa clicável) */}
             <div className="glass-panel" style={{ padding: '0', overflow: 'hidden', height: '360px', borderRadius: '16px' }}>
-              <iframe 
-                title="OpenStreetMap Live GPS"
-                width="100%" 
-                height="100%" 
-                frameBorder="0" 
-                scrolling="no"
-                src={`https://www.openstreetmap.org/export/embed.html?bbox=${(location.longitude||-46.633308)-0.01}%2C${(location.latitude||-23.550520)-0.01}%2C${(location.longitude||-46.633308)+0.01}%2C${(location.latitude||-23.550520)+0.01}&layer=mapnik&marker=${location.latitude||-23.550520}%2C${location.longitude||-46.633308}`}
-              />
+              <MapContainer
+                center={[location.latitude || -23.550520, location.longitude || -46.633308]}
+                zoom={14}
+                style={{ height: '100%', width: '100%' }}
+              >
+                <TileLayer
+                  attribution='&copy; OpenStreetMap contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                {location.latitude && location.longitude && (
+                  <Marker position={[location.latitude, location.longitude]} />
+                )}
+                {geofences.map(gf => (
+                  <Circle
+                    key={gf.id}
+                    center={[gf.latitude, gf.longitude]}
+                    radius={gf.radiusMeters}
+                    pathOptions={{ color: gf.status === 'inside' ? '#10b981' : '#f59e0b', fillOpacity: 0.15 }}
+                  />
+                ))}
+              </MapContainer>
             </div>
           </div>
+        )}
+
+        {geofenceModalOpen && (
+          <GeofenceMapPicker
+            geofence={geofenceModalOpen.id ? geofenceModalOpen : null}
+            defaultCenter={location.latitude ? { lat: location.latitude, lng: location.longitude } : null}
+            onSave={handleSaveGeofence}
+            onDelete={handleDeleteGeofence}
+            onClose={() => setGeofenceModalOpen(null)}
+          />
         )}
 
         {/* TAB: TAREFAS DIÁRIAS */}
@@ -660,7 +742,7 @@ export default function App() {
                       className="btn"
                       style={{
                         textAlign: 'left', padding: '12px 16px', borderRadius: '12px',
-                        background: tasks.unlockMode === opt.id ? 'linear-gradient(135deg, var(--accent-blue), var(--accent-purple))' : 'rgba(255,255,255,0.03)',
+                        background: tasks.unlockMode === opt.id ? 'linear-gradient(135deg, var(--accent-blue), var(--accent-purple))' : 'var(--surface-1)',
                         color: tasks.unlockMode === opt.id ? 'white' : 'var(--text-primary)',
                         border: tasks.unlockMode === opt.id ? 'none' : '1px solid var(--border-color)',
                         display: 'block'
@@ -725,7 +807,7 @@ export default function App() {
                     const statusLabel = { pending: 'PENDENTE', submitted: 'AGUARDANDO', approved: 'APROVADA', rejected: 'RECUSADA' }[status];
                     const statusClass = { pending: 'badge-warning', submitted: 'badge-warning', approved: 'badge-success', rejected: 'badge-danger' }[status];
                     return (
-                      <div key={task.id} style={{ padding: '14px', borderRadius: '14px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                      <div key={task.id} style={{ padding: '14px', borderRadius: '14px', background: 'var(--surface-1)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <span style={{ fontSize: '1.4rem' }}>{task.icon}</span>
                           <div>
@@ -806,7 +888,7 @@ export default function App() {
                     key={req.id} 
                     style={{ 
                       padding: '18px', borderRadius: '14px', 
-                      background: req.status === 'pending' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                      background: req.status === 'pending' ? 'rgba(245, 158, 11, 0.08)' : 'var(--surface-1)',
                       border: `1px solid ${req.status === 'pending' ? 'rgba(245, 158, 11, 0.3)' : 'var(--border-color)'}`,
                       display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '16px'
                     }}

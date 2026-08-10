@@ -6,16 +6,49 @@
   --text-primary: #f3f4f6;
   --text-secondary: #9ca3af;
   --text-muted: #6b7280;
-  
+  /* Texto sobre fundos coloridos (botões com gradiente, badges) — fica branco nos
+     dois temas, contraste garantido pela própria cor de acento por trás. */
+  --text-on-accent: #ffffff;
+
+  /* Camadas de destaque sutil dentro de um glass-panel (inputs, itens de lista,
+     hover) — 3 intensidades, do mais discreto ao mais forte. Antes eram valores
+     rgba(255,255,255,0.0x) soltos e repetidos direto no JSX, então não respondiam
+     à troca de tema. */
+  --surface-1: rgba(255, 255, 255, 0.03);
+  --surface-2: rgba(255, 255, 255, 0.05);
+  --surface-3: rgba(255, 255, 255, 0.1);
+  /* Fundo escurecido atrás de modais (pareamento QR etc.) */
+  --overlay-scrim: rgba(10, 13, 20, 0.85);
+
   --accent-cyan: #06b6d4;
   --accent-blue: #3b82f6;
   --accent-purple: #8b5cf6;
   --accent-emerald: #10b981;
   --accent-amber: #f59e0b;
   --accent-rose: #f43f5e;
-  
+
   --glass-glow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   --font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Modo claro: aplicado via document.documentElement.setAttribute('data-theme', 'light')
+   (ver hook de tema no App.jsx). Redefine só as variáveis — o resto da UI já
+   responde sozinho porque usa var(--...) em vez de cor fixa. */
+[data-theme="light"] {
+  --bg-primary: #f3f5fa;
+  --bg-card: rgba(255, 255, 255, 0.75);
+  --bg-card-hover: rgba(255, 255, 255, 0.92);
+  --border-color: rgba(15, 23, 42, 0.09);
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  --surface-1: rgba(15, 23, 42, 0.035);
+  --surface-2: rgba(15, 23, 42, 0.05);
+  --surface-3: rgba(15, 23, 42, 0.08);
+  --overlay-scrim: rgba(15, 23, 42, 0.45);
+
+  --glass-glow: 0 8px 32px 0 rgba(15, 23, 42, 0.1);
 }
 
 * {
@@ -26,7 +59,7 @@
 
 body {
   background-color: var(--bg-primary);
-  background-image: 
+  background-image:
     radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.12) 0%, transparent 40%),
     radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.12) 0%, transparent 40%);
   color: var(--text-primary);
@@ -47,7 +80,7 @@ body {
 }
 
 .glass-panel:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--surface-3);
 }
 
 /* Buttons & Controls */
@@ -68,7 +101,7 @@ body {
 
 .btn-primary {
   background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-  color: white;
+  color: var(--text-on-accent);
   box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
 }
 
@@ -79,7 +112,7 @@ body {
 
 .btn-danger {
   background: linear-gradient(135deg, var(--accent-rose), #e11d48);
-  color: white;
+  color: var(--text-on-accent);
   box-shadow: 0 4px 14px rgba(244, 63, 94, 0.3);
 }
 
@@ -89,13 +122,13 @@ body {
 }
 
 .btn-ghost {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-2);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
 }
 
 .btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-3);
 }
 
 /* Toggle Switch */
@@ -116,7 +149,7 @@ body {
   position: absolute;
   cursor: pointer;
   top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(255, 255, 255, 0.15);
+  background-color: var(--surface-3);
   transition: .3s;
   border-radius: 34px;
 }
@@ -128,7 +161,7 @@ body {
   width: 18px;
   left: 4px;
   bottom: 4px;
-  background-color: white;
+  background-color: var(--text-on-accent);
   transition: .3s;
   border-radius: 50%;
 }
@@ -184,7 +217,7 @@ input[type=range]::-webkit-slider-runnable-track {
   width: 100%;
   height: 8px;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-3);
   border-radius: 4px;
 }
 
