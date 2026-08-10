@@ -5,9 +5,10 @@ import { Browser } from '@capacitor/browser';
 import { App as CapApp } from '@capacitor/app';
 import { checkForAppUpdates } from './services/updater';
 import {
-  Shield, Clock, Smartphone, Globe, MapPin, AlertTriangle, 
-  Battery, Wifi, Lock, Unlock, Moon, BookOpen, CheckCircle, 
-  XCircle, Plus, Search, Filter, RefreshCw, ChevronRight, User, QrCode, X, Download
+  Shield, Clock, Smartphone, Globe, MapPin, AlertTriangle,
+  Battery, Wifi, Lock, Unlock, Moon, BookOpen, CheckCircle,
+  XCircle, Plus, Search, Filter, RefreshCw, ChevronRight, User, QrCode, X, Download,
+  ListChecks, Camera, Trash2
 } from 'lucide-react';
 
 const SERVER_URLS = [
@@ -26,6 +27,12 @@ export default function App() {
   const [appSearch, setAppSearch] = useState('');
   const [connectionStatusText, setConnectionStatusText] = useState('Iniciando conexão...');
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [serverUrl, setServerUrl] = useState(null);
+
+  // Formulário de nova tarefa diária
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskIcon, setNewTaskIcon] = useState('✅');
+  const [newTaskMinutes, setNewTaskMinutes] = useState(15);
   
   // Modal de Pareamento QR Code
   const [showPairModal, setShowPairModal] = useState(false);
@@ -88,6 +95,7 @@ export default function App() {
       s.on('connect', () => {
         setIsConnected(true);
         setSocket(s);
+        setServerUrl(targetUrl);
         activeSocket = s;
       });
 
@@ -137,8 +145,9 @@ export default function App() {
     );
   }
 
-  const { deviceInfo, screenTime, blockedApps, contentFilter, location, geofences, timeRequests, pairedDevices = [] } = state;
+  const { deviceInfo, screenTime, blockedApps, contentFilter, location, geofences, timeRequests, pairedDevices = [], tasks } = state;
   const pendingRequests = timeRequests.filter(r => r.status === 'pending');
+  const pendingTaskSubmissions = tasks.todayStatus.filter(t => t.status === 'submitted');
 
   const handleSetDailyLimit = (minutes) => {
     socket?.emit('parent:set_daily_limit', Number(minutes));
@@ -162,6 +171,33 @@ export default function App() {
 
   const handleRespondRequest = (requestId, approved, bonusMinutes = 15) => {
     socket?.emit('parent:respond_time_request', { requestId, approved, bonusMinutes });
+  };
+
+  const handleSetTaskMode = (unlockMode) => {
+    socket?.emit('parent:set_task_config', { unlockMode });
+  };
+
+  const handleAddTask = (e) => {
+    e.preventDefault();
+    if (!newTaskTitle.trim()) return;
+    const newTask = {
+      id: 'task-' + Date.now(),
+      title: newTaskTitle.trim(),
+      icon: newTaskIcon.trim() || '✅',
+      rewardMinutes: Number(newTaskMinutes) || 0
+    };
+    socket?.emit('parent:set_task_config', { dailyTasks: [...tasks.dailyTasks, newTask] });
+    setNewTaskTitle('');
+    setNewTaskIcon('✅');
+    setNewTaskMinutes(15);
+  };
+
+  const handleRemoveTask = (taskId) => {
+    socket?.emit('parent:set_task_config', { dailyTasks: tasks.dailyTasks.filter(t => t.id !== taskId) });
+  };
+
+  const handleRespondTask = (taskId, approved, rejectedReason) => {
+    socket?.emit('parent:respond_task', { taskId, approved, rejectedReason });
   };
 
   const filteredApps = blockedApps.filter(a => 
@@ -289,6 +325,7 @@ export default function App() {
           { id: 'apps', label: `Apps Instalados (${blockedApps.length})`, icon: Smartphone },
           { id: 'content', label: 'Filtro Web', icon: Globe },
           { id: 'location', label: 'GPS Real', icon: MapPin },
+          { id: 'tasks', label: `Tarefas${pendingTaskSubmissions.length > 0 ? ` (${pendingTaskSubmissions.length})` : ''}`, icon: ListChecks, badge: pendingTaskSubmissions.length > 0 },
           { id: 'requests', label: `Pedidos (${pendingRequests.length})`, icon: AlertTriangle, badge: pendingRequests.length > 0 }
         ].map(tab => {
           const Icon = tab.icon;
@@ -591,6 +628,158 @@ export default function App() {
                 scrolling="no"
                 src={`https://www.openstreetmap.org/export/embed.html?bbox=${(location.longitude||-46.633308)-0.01}%2C${(location.latitude||-23.550520)-0.01}%2C${(location.longitude||-46.633308)+0.01}%2C${(location.latitude||-23.550520)+0.01}&layer=mapnik&marker=${location.latitude||-23.550520}%2C${location.longitude||-46.633308}`}
               />
+            </div>
+          </div>
+        )}
+
+        {/* TAB: TAREFAS DIÁRIAS */}
+        {activeTab === 'tasks' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+              {/* MODO DE BLOQUEIO */}
+              <div className="glass-panel" style={{ padding: '24px' }}>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', marginBottom: '8px' }}>
+                  <ListChecks size={20} style={{ color: 'var(--accent-emerald)' }} /> Modo de Bloqueio por Tarefas
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                  Escolha como as tarefas concluídas afetam o tempo de tela liberado hoje.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {[
+                    { id: 'off', label: 'Desligado', desc: 'Vale só o limite fixo configurado em "Controle de Tempo".' },
+                    { id: 'earn', label: 'Ganhar minutos', desc: 'Sem tarefa aprovada = 0 minutos. Cada aprovação soma os minutos da tarefa.' },
+                    { id: 'all_or_nothing', label: 'Tudo ou nada', desc: 'Celular travado até TODAS as tarefas de hoje serem aprovadas; depois libera o limite fixo normal.' }
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => handleSetTaskMode(opt.id)}
+                      className="btn"
+                      style={{
+                        textAlign: 'left', padding: '12px 16px', borderRadius: '12px',
+                        background: tasks.unlockMode === opt.id ? 'linear-gradient(135deg, var(--accent-blue), var(--accent-purple))' : 'rgba(255,255,255,0.03)',
+                        color: tasks.unlockMode === opt.id ? 'white' : 'var(--text-primary)',
+                        border: tasks.unlockMode === opt.id ? 'none' : '1px solid var(--border-color)',
+                        display: 'block'
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{opt.label}</div>
+                      <div style={{ fontSize: '0.78rem', opacity: 0.85, fontWeight: 400, marginTop: '2px' }}>{opt.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* NOVA TAREFA */}
+              <div className="glass-panel" style={{ padding: '24px' }}>
+                <h3 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Adicionar Tarefa</h3>
+                <form onSubmit={handleAddTask} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="🛏️"
+                      value={newTaskIcon}
+                      onChange={(e) => setNewTaskIcon(e.target.value)}
+                      style={{ width: '56px', textAlign: 'center', padding: '10px', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.05)', color: 'white', outline: 'none', fontSize: '1.1rem' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Ex: Arrumar a cama"
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      style={{ flex: 1, padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.05)', color: 'white', outline: 'none', fontSize: '0.9rem' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newTaskMinutes}
+                      onChange={(e) => setNewTaskMinutes(e.target.value)}
+                      style={{ width: '90px', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.05)', color: 'white', outline: 'none', fontSize: '0.9rem' }}
+                    />
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>minutos de recompensa</span>
+                  </div>
+                  <button type="submit" className="btn btn-primary" style={{ alignSelf: 'flex-start' }}>
+                    <Plus size={18} /> Adicionar Tarefa
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* LISTA DE TAREFAS DE HOJE */}
+            <div className="glass-panel" style={{ padding: '24px' }}>
+              <h3 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Tarefas de Hoje</h3>
+              {tasks.dailyTasks.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '24px 0' }}>
+                  Nenhuma tarefa cadastrada ainda. Adicione a primeira acima.
+                </p>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+                  {tasks.dailyTasks.map(task => {
+                    const todayItem = tasks.todayStatus.find(t => t.taskId === task.id);
+                    const status = todayItem?.status || 'pending';
+                    const statusLabel = { pending: 'PENDENTE', submitted: 'AGUARDANDO', approved: 'APROVADA', rejected: 'RECUSADA' }[status];
+                    const statusClass = { pending: 'badge-warning', submitted: 'badge-warning', approved: 'badge-success', rejected: 'badge-danger' }[status];
+                    return (
+                      <div key={task.id} style={{ padding: '14px', borderRadius: '14px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '1.4rem' }}>{task.icon}</span>
+                          <div>
+                            <h4 style={{ fontSize: '0.9rem', fontWeight: 600 }}>{task.title}</h4>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>+{task.rewardMinutes} min</span>
+                            <span className={`badge ${statusClass}`} style={{ marginLeft: '8px' }}>{statusLabel}</span>
+                          </div>
+                        </div>
+                        <button onClick={() => handleRemoveTask(task.id)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }} title="Remover tarefa">
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* APROVAÇÕES PENDENTES */}
+            <div className="glass-panel" style={{ padding: '24px' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', marginBottom: '16px' }}>
+                <Camera size={20} style={{ color: 'var(--accent-amber)' }} /> Fotos Aguardando Aprovação
+              </h3>
+              {pendingTaskSubmissions.length === 0 ? (
+                <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '40px 0' }}>
+                  Nenhuma tarefa aguardando aprovação no momento.
+                </p>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
+                  {pendingTaskSubmissions.map(item => {
+                    const task = tasks.dailyTasks.find(t => t.id === item.taskId);
+                    return (
+                      <div key={item.taskId} style={{ borderRadius: '14px', overflow: 'hidden', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                        {item.photoUrl && (
+                          <img
+                            src={`${serverUrl || ''}${item.photoUrl}`}
+                            alt={task?.title || 'Comprovação da tarefa'}
+                            style={{ width: '100%', height: '160px', objectFit: 'cover', display: 'block' }}
+                          />
+                        )}
+                        <div style={{ padding: '14px' }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '10px' }}>
+                            {task?.icon} {task?.title || item.taskId} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(+{task?.rewardMinutes || 0}min)</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button className="btn btn-ghost" onClick={() => handleRespondTask(item.taskId, false, 'Foto não confere, tente de novo.')}>
+                              <XCircle size={18} /> Recusar
+                            </button>
+                            <button className="btn btn-primary" onClick={() => handleRespondTask(item.taskId, true)}>
+                              <CheckCircle size={18} /> Aprovar
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
