@@ -28,6 +28,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('time');
   const [newDomain, setNewDomain] = useState('');
   const [appSearch, setAppSearch] = useState('');
+  // Filtro de categoria da aba "Apps Instalados" (chips no topo — ver render mais abaixo)
+  const [appCategoryFilter, setAppCategoryFilter] = useState('Todos');
   const [connectionStatusText, setConnectionStatusText] = useState('Iniciando conexão...');
   const [updateInfo, setUpdateInfo] = useState(null);
   const [serverUrl, setServerUrl] = useState(null);
@@ -270,19 +272,22 @@ export default function App() {
     setTimeout(() => setIsRequestingLocation(false), 75000);
   };
 
-  const filteredApps = blockedApps.filter(a =>
-    a.name.toLowerCase().includes(appSearch.toLowerCase()) ||
-    (a.category && a.category.toLowerCase().includes(appSearch.toLowerCase()))
-  );
+  // Categoria vem do nativo (AppRepository.kt, via ApplicationInfo.FLAG_SYSTEM/
+  // category); apps sincronizados antes dessa feature caem em "Aplicativos"
+  // (fallback já existente no backend). Chips de filtro no topo da aba (não seções
+  // sempre agrupadas) — contagem de cada chip é sobre todos os apps, não só os já
+  // filtrados por busca, pra não ficar mudando de número enquanto a pessoa digita.
+  const APP_CATEGORIES = ['Todos', 'Jogos', 'Aplicativos', 'Sistema'];
+  const appCategoryCounts = APP_CATEGORIES.reduce((acc, cat) => {
+    acc[cat] = cat === 'Todos' ? blockedApps.length : blockedApps.filter(a => (a.category || 'Aplicativos') === cat).length;
+    return acc;
+  }, {});
 
-  // Agrupa por categoria pra exibir em seções (Jogos primeiro — é o que mais importa
-  // bloquear —, depois Aplicativos, Sistema por último). Categoria vem do nativo
-  // (AppRepository.kt, via ApplicationInfo.FLAG_SYSTEM/category); apps sincronizados
-  // antes dessa feature caem em "Aplicativos" (fallback já existente no backend).
-  const APP_CATEGORY_ORDER = ['Jogos', 'Aplicativos', 'Sistema'];
-  const appsByCategory = APP_CATEGORY_ORDER
-    .map(category => ({ category, apps: filteredApps.filter(a => (a.category || 'Aplicativos') === category) }))
-    .filter(group => group.apps.length > 0);
+  const filteredApps = blockedApps.filter(a =>
+    (appCategoryFilter === 'Todos' || (a.category || 'Aplicativos') === appCategoryFilter) &&
+    (a.name.toLowerCase().includes(appSearch.toLowerCase()) ||
+      (a.category && a.category.toLowerCase().includes(appSearch.toLowerCase())))
+  );
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px 16px' }}>
@@ -591,9 +596,9 @@ export default function App() {
 
               <div style={{ position: 'relative', width: '260px' }}>
                 <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input 
-                  type="text" 
-                  placeholder="Buscar aplicativo..." 
+                <input
+                  type="text"
+                  placeholder="Buscar aplicativo..."
                   value={appSearch}
                   onChange={(e) => setAppSearch(e.target.value)}
                   style={{
@@ -605,54 +610,68 @@ export default function App() {
               </div>
             </div>
 
+            {/* Chips de filtro por categoria — vem do nativo (AppRepository.kt) */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px' }}>
+              {APP_CATEGORIES.map(cat => {
+                const isActive = appCategoryFilter === cat;
+                const icon = cat === 'Jogos' ? '🎮' : cat === 'Sistema' ? '⚙️' : cat === 'Aplicativos' ? '📱' : '';
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setAppCategoryFilter(cat)}
+                    className="btn"
+                    style={{
+                      background: isActive ? 'linear-gradient(135deg, var(--accent-blue), var(--accent-purple))' : 'var(--surface-1)',
+                      color: isActive ? 'white' : 'var(--text-secondary)',
+                      border: isActive ? 'none' : '1px solid var(--border-color)',
+                      padding: '8px 14px', fontSize: '0.82rem'
+                    }}
+                  >
+                    {icon} {cat} ({appCategoryCounts[cat]})
+                  </button>
+                );
+              })}
+            </div>
+
             {filteredApps.length === 0 ? (
               <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0' }}>
                 Nenhum aplicativo encontrado. Conecte o celular do filho para sincronizar a lista de aplicativos instalados.
               </p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                {appsByCategory.map(({ category, apps }) => (
-                  <div key={category}>
-                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      {category === 'Jogos' ? '🎮' : category === 'Sistema' ? '⚙️' : '📱'} {category} ({apps.length})
-                    </h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
-                      {apps.map(app => (
-                        <div
-                          key={app.id}
-                          style={{
-                            padding: '16px', borderRadius: '14px',
-                            background: app.isBlocked ? 'rgba(244, 63, 94, 0.08)' : 'var(--surface-1)',
-                            border: `1px solid ${app.isBlocked ? 'rgba(244, 63, 94, 0.3)' : 'var(--border-color)'}`,
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{
-                              width: '42px', height: '42px', borderRadius: '12px',
-                              background: app.isBlocked ? 'rgba(244, 63, 94, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              color: app.isBlocked ? 'var(--accent-rose)' : 'var(--accent-blue)'
-                            }}>
-                              <Smartphone size={22} />
-                            </div>
-                            <div>
-                              <h4 style={{ fontSize: '0.95rem', fontWeight: 600 }}>{app.name}</h4>
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{app.category || 'Aplicativo'}</span>
-                            </div>
-                          </div>
-
-                          <label className="switch">
-                            <input
-                              type="checkbox"
-                              checked={app.isBlocked}
-                              onChange={() => handleToggleAppBlock(app.id, app.isBlocked)}
-                            />
-                            <span className="slider"></span>
-                          </label>
-                        </div>
-                      ))}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+                {filteredApps.map(app => (
+                  <div
+                    key={app.id}
+                    style={{
+                      padding: '16px', borderRadius: '14px',
+                      background: app.isBlocked ? 'rgba(244, 63, 94, 0.08)' : 'var(--surface-1)',
+                      border: `1px solid ${app.isBlocked ? 'rgba(244, 63, 94, 0.3)' : 'var(--border-color)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{
+                        width: '42px', height: '42px', borderRadius: '12px',
+                        background: app.isBlocked ? 'rgba(244, 63, 94, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: app.isBlocked ? 'var(--accent-rose)' : 'var(--accent-blue)'
+                      }}>
+                        <Smartphone size={22} />
+                      </div>
+                      <div>
+                        <h4 style={{ fontSize: '0.95rem', fontWeight: 600 }}>{app.name}</h4>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{app.category || 'Aplicativo'}</span>
+                      </div>
                     </div>
+
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        checked={app.isBlocked}
+                        onChange={() => handleToggleAppBlock(app.id, app.isBlocked)}
+                      />
+                      <span className="slider"></span>
+                    </label>
                   </div>
                 ))}
               </div>
