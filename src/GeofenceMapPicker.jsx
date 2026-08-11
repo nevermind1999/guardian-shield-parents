@@ -78,7 +78,7 @@ export default function GeofenceMapPicker({ geofence, defaultCenter, onSave, onD
               draggable
               eventHandlers={{ dragend: (e) => setPosition(e.target.getLatLng()) }}
             />
-            <Circle center={position} radius={radiusMeters} pathOptions={{ color: '#3b82f6', fillOpacity: 0.15 }} />
+            <Circle center={position} radius={radiusMeters} pathOptions={{ color: '#f97316', fillOpacity: 0.15 }} />
           </MapContainer>
         </div>
 

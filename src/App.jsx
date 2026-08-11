@@ -10,8 +10,8 @@ import { checkForAppUpdates } from './services/updater';
 import {
   Shield, Clock, Smartphone, Globe, MapPin, AlertTriangle,
   Battery, Wifi, Lock, Unlock, Moon, Sun, BookOpen, CheckCircle,
-  XCircle, Plus, Search, Filter, RefreshCw, ChevronRight, User, QrCode, X, Download,
-  ListChecks, Camera, Trash2
+  XCircle, Plus, Minus, Search, Filter, RefreshCw, ChevronRight, User, QrCode, X, Download,
+  ListChecks, Camera, Trash2, Pencil, Phone
 } from 'lucide-react';
 
 const SERVER_URLS = [
@@ -66,6 +66,27 @@ export default function App() {
   // PIN de desbloqueio de emergência
   const [pinInput, setPinInput] = useState('');
   const [pinSavedNotice, setPinSavedNotice] = useState(false);
+
+  // Telefone de emergência (botão "Chamada de Emergência" na tela de bloqueio do Filho)
+  const [emergencyPhoneInput, setEmergencyPhoneInput] = useState('');
+  const [emergencyPhoneSavedNotice, setEmergencyPhoneSavedNotice] = useState(false);
+
+  // Rotinas (Hora de Dormir/Estudo) — modal de editar início/fim. `scheduleModalOpen`
+  // guarda qual chave está sendo editada ('bedtimeSchedule'|'studySchedule') ou null.
+  // Só persiste (parent:set_schedule); ainda não bloqueia o aparelho nesses horários.
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(null);
+  const [scheduleDraft, setScheduleDraft] = useState({ start: '', end: '' });
+
+  // Botão de sincronizar do header: pede pro nativo reenviar bateria/wifi/modelo
+  // agora (parent:request_device_sync/deviceSyncRequested), em vez de esperar o
+  // ciclo periódico de ~5min — mesmo padrão do "Forçar Atualização" de GPS abaixo.
+  const [isSyncingDevice, setIsSyncingDevice] = useState(false);
+  const requestedAtDeviceLastSeenRef = useRef(null);
+  useEffect(() => {
+    if (isSyncingDevice && state?.deviceInfo?.lastSeen !== requestedAtDeviceLastSeenRef.current) {
+      setIsSyncingDevice(false);
+    }
+  }, [state?.deviceInfo?.lastSeen, isSyncingDevice]);
 
   // "Forçar Atualização" de GPS — mostra spinner até a localização mudar de fato
   // (o nativo busca uma leitura fresca no próximo poll, até ~1min) ou dar timeout.
@@ -263,6 +284,52 @@ export default function App() {
     setTimeout(() => setPinSavedNotice(false), 3000);
   };
 
+  const handleSaveEmergencyPhone = (e) => {
+    e.preventDefault();
+    if (!emergencyPhoneInput.trim()) return;
+    socket?.emit('parent:set_emergency_phone', emergencyPhoneInput.trim());
+    setEmergencyPhoneInput('');
+    setEmergencyPhoneSavedNotice(true);
+    setTimeout(() => setEmergencyPhoneSavedNotice(false), 3000);
+  };
+
+  // Stepper ±5min do limite diário (substitui o slider) — mesmo evento de sempre,
+  // só muda como o valor chega até ele.
+  const handleAdjustDailyLimit = (deltaMinutes) => {
+    const next = Math.max(15, Math.min(1440, screenTime.dailyLimitMinutes + deltaMinutes));
+    handleSetDailyLimit(next);
+  };
+
+  // Rotinas: o toggle liga/desliga na hora (sem precisar abrir o modal); o lápis
+  // abre o modal só pra editar início/fim, mantendo o "enabled" atual.
+  const handleToggleSchedule = (key, enabled) => {
+    const current = screenTime[key];
+    socket?.emit('parent:set_schedule', { key, enabled, start: current.start, end: current.end });
+  };
+
+  const handleOpenScheduleModal = (key) => {
+    setScheduleDraft({ start: screenTime[key].start, end: screenTime[key].end });
+    setScheduleModalOpen(key);
+  };
+
+  const handleSaveSchedule = (e) => {
+    e.preventDefault();
+    const current = screenTime[scheduleModalOpen];
+    socket?.emit('parent:set_schedule', { key: scheduleModalOpen, enabled: current.enabled, ...scheduleDraft });
+    setScheduleModalOpen(null);
+  };
+
+  // Pede que o aparelho do filho reenvie bateria/wifi/modelo agora (o nativo pega
+  // esse pedido no próximo poll de regras, até ~1min, e responde via
+  // POST /api/device/telemetry-sync) — spinner some sozinho quando o lastSeen mudar
+  // (ver useEffect acima) ou em até 75s por segurança.
+  const handleSyncDevice = () => {
+    requestedAtDeviceLastSeenRef.current = deviceInfo.lastSeen;
+    setIsSyncingDevice(true);
+    socket?.emit('parent:request_device_sync');
+    setTimeout(() => setIsSyncingDevice(false), 75000);
+  };
+
   // Pede uma leitura de GPS ativa no próximo poll do celular (~1min) em vez da última
   // posição em cache — ver locationUpdateRequested/postInstalledApps no nativo.
   const handleRequestLocationUpdate = () => {
@@ -289,24 +356,54 @@ export default function App() {
       (a.category && a.category.toLowerCase().includes(appSearch.toLowerCase())))
   );
 
+  // Inicial do nome pro avatar local (sem chamar serviço externo tipo ui-avatars.com
+  // — mesma apresentação visual, sem mandar o nome da criança pra fora).
+  const deviceInitial = (deviceInfo.name || '?').trim().charAt(0).toUpperCase();
+
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px 16px' }}>
-      
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px 16px', position: 'relative' }}>
+
+      {/* "Blobs" ambiente desfocados atrás de tudo — puramente decorativo */}
+      <div className="ambient-blobs">
+        <div className="blob blob-1"></div>
+        <div className="blob blob-2"></div>
+      </div>
+
       {/* HEADER / STATUS DA CRIANÇA */}
       <header className="glass-panel" style={{ padding: '20px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ width: '52px', height: '52px', borderRadius: '16px', background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-on-accent)' }}>
-            <User size={28} />
+          <div style={{ position: 'relative', width: '52px', height: '52px', flexShrink: 0 }}>
+            <div style={{ width: '52px', height: '52px', borderRadius: '16px', background: 'linear-gradient(135deg, var(--accent-blue), var(--accent-purple))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-on-accent)', fontSize: '1.3rem', fontWeight: 800 }}>
+              {deviceInitial}
+            </div>
+            {deviceInfo.isOnline && (
+              <span style={{ position: 'absolute', bottom: '-2px', right: '-2px', width: '14px', height: '14px', borderRadius: '50%', background: 'var(--accent-emerald)', border: '3px solid var(--bg-card)' }} />
+            )}
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <h1 style={{ fontSize: '1.4rem', fontWeight: 800 }}>{deviceInfo.name}</h1>
-              <span className={`badge ${deviceInfo.isOnline ? 'badge-success' : 'badge-danger'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <Wifi size={12} /> {deviceInfo.isOnline ? 'Online' : 'Desconectado'}
+              <button
+                className="btn btn-ghost"
+                onClick={handleSyncDevice}
+                title="Sincronizar informações do aparelho"
+                style={{ padding: '6px' }}
+              >
+                <RefreshCw size={14} style={isSyncingDevice ? { animation: 'spin 1s linear infinite', color: 'var(--accent-blue)' } : undefined} />
+              </button>
+              <span className={`badge ${deviceInfo.isOnline ? 'badge-success' : 'badge-danger'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                {deviceInfo.isOnline && (
+                  <span style={{ position: 'relative', display: 'inline-flex', width: '8px', height: '8px' }}>
+                    <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'var(--accent-emerald)', opacity: 0.75, animation: 'ping 1.5s cubic-bezier(0,0,0.2,1) infinite' }} />
+                    <span style={{ position: 'relative', width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent-emerald)' }} />
+                  </span>
+                )}
+                {deviceInfo.isOnline ? 'Online' : 'Desconectado'}
               </span>
             </div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
               {deviceInfo.model} • Bateria Real: <strong>{deviceInfo.batteryLevel}%</strong>
+              {deviceInfo.networkType && <> • {deviceInfo.networkType}</>}
             </p>
           </div>
         </div>
@@ -325,8 +422,8 @@ export default function App() {
           <button className="btn btn-primary" onClick={handleGeneratePairingCode} disabled={isGeneratingPairing}>
             <QrCode size={18} /> {isGeneratingPairing ? 'Gerando QR...' : 'Parear Novo Aparelho'}
           </button>
-          
-          <button 
+
+          <button
             className={`btn ${screenTime.isPauseAllActive ? 'btn-danger' : 'btn-ghost'}`}
             onClick={handleTogglePauseAll}
           >
@@ -342,7 +439,7 @@ export default function App() {
           padding: '16px 20px', borderRadius: '16px', marginBottom: '24px',
           background: 'linear-gradient(135deg, var(--accent-blue), var(--accent-purple))',
           color: 'var(--text-on-accent)', display: 'flex', flexWrap: 'wrap', alignItems: 'center',
-          justifyContent: 'space-between', gap: '12px', boxShadow: '0 8px 24px rgba(59, 130, 246, 0.3)'
+          justifyContent: 'space-between', gap: '12px', boxShadow: '0 8px 24px rgba(249, 115, 22, 0.3)'
         }}>
           <div>
             <h4 style={{ fontSize: '1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -401,7 +498,7 @@ export default function App() {
 
             <div style={{ background: 'var(--surface-2)', padding: '12px', borderRadius: '12px', marginBottom: '16px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>CÓDIGO DE PAREAMENTO</span>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, letterSpacing: '4px', color: 'var(--accent-cyan)' }}>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, letterSpacing: '4px', color: 'var(--accent-blue)' }}>
                 {pairingData.pairingCode}
               </div>
             </div>
@@ -450,9 +547,9 @@ export default function App() {
             <div className="glass-panel" style={{ padding: '24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
                 <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem' }}>
-                  <Clock size={20} style={{ color: 'var(--accent-cyan)' }} /> Limite de Tempo Diário
+                  <Clock size={20} style={{ color: 'var(--accent-blue)' }} /> Limite de Tempo Diário
                 </h3>
-                <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent-cyan)' }}>
+                <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent-blue)' }}>
                   {Math.floor(screenTime.dailyLimitMinutes / 60)}h {screenTime.dailyLimitMinutes % 60}m
                 </span>
               </div>
@@ -463,31 +560,38 @@ export default function App() {
                   <span>Restante: {Math.max(0, screenTime.dailyLimitMinutes - screenTime.usedMinutesToday)}m</span>
                 </div>
                 <div style={{ height: '10px', background: 'var(--surface-3)', borderRadius: '5px', overflow: 'hidden' }}>
-                  <div style={{ 
-                    height: '100%', 
+                  <div style={{
+                    height: '100%',
                     width: `${Math.min(100, (screenTime.usedMinutesToday / screenTime.dailyLimitMinutes) * 100)}%`,
-                    background: 'linear-gradient(90deg, var(--accent-cyan), var(--accent-blue))',
+                    background: 'linear-gradient(90deg, var(--accent-blue), var(--accent-purple))',
                     borderRadius: '5px'
                   }} />
                 </div>
               </div>
 
-              <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                Ajustar limite diário:
+              <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '10px', textAlign: 'center' }}>
+                Ajustar limite (± 5 min)
               </label>
-              <input 
-                type="range" 
-                min="30" 
-                max="360" 
-                step="15"
-                value={screenTime.dailyLimitMinutes} 
-                onChange={(e) => handleSetDailyLimit(e.target.value)}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-                <span>30 min</span>
-                <span>2h</span>
-                <span>4h</span>
-                <span>6h</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => handleAdjustDailyLimit(-5)}
+                  style={{ width: '44px', height: '44px', padding: 0, borderRadius: '12px' }}
+                >
+                  <Minus size={20} />
+                </button>
+                <div style={{ minWidth: '96px', textAlign: 'center', fontSize: '1.3rem', fontWeight: 800, color: 'var(--accent-blue)' }}>
+                  {Math.floor(screenTime.dailyLimitMinutes / 60)}h {screenTime.dailyLimitMinutes % 60}m
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => handleAdjustDailyLimit(5)}
+                  style={{ width: '44px', height: '44px', padding: 0, borderRadius: '12px' }}
+                >
+                  <Plus size={20} />
+                </button>
               </div>
             </div>
 
@@ -497,38 +601,49 @@ export default function App() {
               </h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ background: 'var(--surface-1)', padding: '16px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <Moon size={22} style={{ color: 'var(--accent-purple)' }} />
-                    <div>
-                      <h4 style={{ fontSize: '0.95rem' }}>Hora de Dormir</h4>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        {screenTime.bedtimeSchedule.start} às {screenTime.bedtimeSchedule.end}
-                      </p>
+                {[
+                  { key: 'bedtimeSchedule', icon: Moon, iconColor: 'var(--accent-purple)', label: 'Hora de Dormir' },
+                  { key: 'studySchedule', icon: BookOpen, iconColor: 'var(--accent-amber)', label: 'Hora de Estudo' }
+                ].map(({ key, icon: Icon, iconColor, label }) => (
+                  <div key={key} style={{ background: 'var(--surface-1)', padding: '16px', borderRadius: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <Icon size={22} style={{ color: iconColor }} />
+                        <h4 style={{ fontSize: '0.95rem' }}>{label}</h4>
+                      </div>
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={screenTime[key].enabled}
+                          onChange={(e) => handleToggleSchedule(key, e.target.checked)}
+                        />
+                        <span className="slider"></span>
+                      </label>
+                    </div>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      background: 'var(--surface-2)', padding: '10px 12px', borderRadius: '10px',
+                      opacity: screenTime[key].enabled ? 1 : 0.5
+                    }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                        {screenTime[key].start} - {screenTime[key].end}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenScheduleModal(key)}
+                        title="Editar horário"
+                        style={{ background: 'var(--surface-3)', border: 'none', borderRadius: '8px', padding: '6px', color: 'var(--text-primary)', cursor: 'pointer', display: 'flex' }}
+                      >
+                        <Pencil size={14} />
+                      </button>
                     </div>
                   </div>
-                  <label className="switch">
-                    <input type="checkbox" defaultChecked={screenTime.bedtimeSchedule.enabled} />
-                    <span className="slider"></span>
-                  </label>
-                </div>
-
-                <div style={{ background: 'var(--surface-1)', padding: '16px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <BookOpen size={22} style={{ color: 'var(--accent-amber)' }} />
-                    <div>
-                      <h4 style={{ fontSize: '0.95rem' }}>Hora de Estudo</h4>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        {screenTime.studySchedule.start} às {screenTime.studySchedule.end}
-                      </p>
-                    </div>
-                  </div>
-                  <label className="switch">
-                    <input type="checkbox" defaultChecked={screenTime.studySchedule.enabled} />
-                    <span className="slider"></span>
-                  </label>
-                </div>
+                ))}
               </div>
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '14px' }}>
+                Por enquanto essas rotinas só ficam salvas — ainda não travam o aparelho
+                sozinhas nesses horários.
+              </p>
             </div>
 
             {/* PIN DE DESBLOQUEIO DE EMERGÊNCIA — funciona mesmo com o celular da
@@ -546,7 +661,7 @@ export default function App() {
 
               <div style={{ marginBottom: '16px' }}>
                 {screenTime.hasUnlockPin ? (
-                  <span className="badge badge-success">PIN CADASTRADO ✅</span>
+                  <span className="badge badge-success">PIN ATIVO ✅</span>
                 ) : (
                   <span className="badge badge-warning">NENHUM PIN CADASTRADO</span>
                 )}
@@ -579,6 +694,90 @@ export default function App() {
                   PIN salvo! Pode levar até 1 minuto para chegar no aparelho da criança.
                 </p>
               )}
+
+              <div style={{ height: '1px', background: 'var(--border-color)', margin: '20px 0' }} />
+
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', marginBottom: '8px' }}>
+                <Phone size={20} style={{ color: 'var(--accent-rose)' }} /> Telefone de Emergência
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                Usado pelo botão "Chamada de Emergência" na tela de bloqueio do celular da criança.
+              </p>
+              <div style={{ marginBottom: '16px' }}>
+                {screenTime.emergencyPhone ? (
+                  <span className="badge badge-success">{screenTime.emergencyPhone}</span>
+                ) : (
+                  <span className="badge badge-warning">NENHUM TELEFONE CADASTRADO</span>
+                )}
+              </div>
+              <form onSubmit={handleSaveEmergencyPhone} style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="tel"
+                  placeholder="Ex: 11987654321"
+                  value={emergencyPhoneInput}
+                  onChange={(e) => setEmergencyPhoneInput(e.target.value.replace(/[^\d+]/g, ''))}
+                  style={{
+                    flex: 1, padding: '10px 14px', borderRadius: '10px',
+                    border: '1px solid var(--border-color)', background: 'var(--surface-2)',
+                    color: 'var(--text-primary)', outline: 'none', fontSize: '0.9rem'
+                  }}
+                />
+                <button type="submit" className="btn btn-primary" disabled={!emergencyPhoneInput.trim()}>
+                  Salvar
+                </button>
+              </form>
+              {emergencyPhoneSavedNotice && (
+                <p style={{ fontSize: '0.8rem', color: 'var(--accent-emerald)', marginTop: '8px' }}>
+                  Telefone salvo!
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: EDITAR HORÁRIO DE ROTINA (Dormir/Estudo) */}
+        {scheduleModalOpen && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            background: 'var(--overlay-scrim)', backdropFilter: 'blur(12px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+          }}>
+            <div className="glass-panel" style={{ padding: '24px', maxWidth: '380px', width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Clock size={18} style={{ color: 'var(--accent-blue)' }} />
+                  {scheduleModalOpen === 'bedtimeSchedule' ? 'Hora de Dormir' : 'Hora de Estudo'}
+                </h3>
+                <button onClick={() => setScheduleModalOpen(null)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                  <X size={20} />
+                </button>
+              </div>
+              <form onSubmit={handleSaveSchedule} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', textAlign: 'center' }}>Início</label>
+                    <input
+                      type="time"
+                      value={scheduleDraft.start}
+                      onChange={(e) => setScheduleDraft(d => ({ ...d, start: e.target.value }))}
+                      style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'var(--surface-2)', color: 'var(--text-primary)', textAlign: 'center', fontWeight: 700, outline: 'none' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', textAlign: 'center' }}>Fim</label>
+                    <input
+                      type="time"
+                      value={scheduleDraft.end}
+                      onChange={(e) => setScheduleDraft(d => ({ ...d, end: e.target.value }))}
+                      style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'var(--surface-2)', color: 'var(--text-primary)', textAlign: 'center', fontWeight: 700, outline: 'none' }}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setScheduleModalOpen(null)}>Cancelar</button>
+                  <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Salvar</button>
+                </div>
+              </form>
             </div>
           </div>
         )}
@@ -652,7 +851,7 @@ export default function App() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <div style={{
                         width: '42px', height: '42px', borderRadius: '12px',
-                        background: app.isBlocked ? 'rgba(244, 63, 94, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                        background: app.isBlocked ? 'rgba(244, 63, 94, 0.2)' : 'rgba(249, 115, 22, 0.2)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         color: app.isBlocked ? 'var(--accent-rose)' : 'var(--accent-blue)'
                       }}>
