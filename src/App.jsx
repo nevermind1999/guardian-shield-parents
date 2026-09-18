@@ -11,7 +11,7 @@ import {
   Shield, Clock, Smartphone, Globe, MapPin, AlertTriangle,
   Battery, Wifi, Lock, Unlock, Moon, Sun, BookOpen, CheckCircle,
   XCircle, Plus, Minus, Search, Filter, RefreshCw, ChevronRight, User, QrCode, X, Download,
-  ListChecks, Camera, Trash2, Pencil, Phone
+  ListChecks, Camera, Trash2, Pencil, Phone, ShieldCheck, LogOut, ArrowLeft
 } from 'lucide-react';
 
 const SERVER_URLS = [
@@ -21,7 +21,221 @@ const SERVER_URLS = [
   'http://10.0.2.2:3001'
 ].filter(Boolean);
 
+// Só o primeiro candidato (o servidor de produção real) — os outros no array acima são
+// candidatos de rede local só pro Socket.IO tentar em dev/emulador; login/cadastro é uma
+// requisição com efeito colateral (não dá pra "tentar todos até um responder" como no
+// socket, senão arriscaria criar conta duplicada em servidores diferentes).
+const AUTH_BASE_URL = SERVER_URLS[0];
+
+async function authRequest(path, body) {
+  try {
+    const res = await fetch(AUTH_BASE_URL + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (res.ok && data.success) return { success: true, token: data.token };
+    return { success: false, error: data.error || 'Falha na requisição.' };
+  } catch (e) {
+    return { success: false, error: 'Sem conexão com o servidor.' };
+  }
+}
+
+/**
+ * Porta de entrada do app — tela cheia (não modal) mostrada enquanto não existe token
+ * salvo (localStorage). Reaproveita o tema claro/escuro e os componentes do resto do
+ * app (glass-panel, btn, var(--accent-*)) em vez do fundo branco fixo do mockup
+ * original, já que este app (diferente do nativo) já tem alternância clara/escura de
+ * verdade — assim a tela de login respeita a escolha de tema da pessoa.
+ */
+function AuthGate({ onAuthenticated }) {
+  const [view, setView] = useState('welcome'); // 'welcome' | 'login' | 'register'
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!email.trim() || !password) { setError('Preencha e-mail e senha.'); return; }
+    setLoading(true);
+    const result = await authRequest('/api/auth/login', { email: email.trim(), password });
+    setLoading(false);
+    if (result.success) onAuthenticated(result.token, email.trim());
+    else setError(result.error);
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!email.trim() || !email.includes('@')) { setError('Digite um e-mail válido.'); return; }
+    if (password.length < 6) { setError('A senha precisa ter pelo menos 6 caracteres.'); return; }
+    if (password !== passwordConfirm) { setError('As senhas não coincidem.'); return; }
+    setLoading(true);
+    const result = await authRequest('/api/auth/register', { email: email.trim(), password });
+    setLoading(false);
+    if (result.success) onAuthenticated(result.token, email.trim());
+    else setError(result.error);
+  };
+
+  const inputStyle = {
+    width: '100%', padding: '12px 14px', borderRadius: '10px',
+    border: '1px solid var(--border-color)', background: 'var(--surface-2)',
+    color: 'var(--text-primary)', outline: 'none', fontSize: '0.95rem', marginBottom: '14px'
+  };
+  const labelStyle = { display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '6px' };
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', position: 'relative' }}>
+      <div className="ambient-blobs">
+        <div className="blob blob-1"></div>
+        <div className="blob blob-2"></div>
+      </div>
+
+      <div className="glass-panel" style={{ padding: '32px', maxWidth: '400px', width: '100%' }}>
+        {view !== 'welcome' && (
+          <button
+            onClick={() => { setView('welcome'); setError(''); }}
+            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '20px', padding: 0, fontSize: '0.85rem' }}
+          >
+            <ArrowLeft size={16} /> Voltar
+          </button>
+        )}
+
+        {view === 'welcome' && (
+          <>
+            <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+              <img
+                src="/mascote-guardian-shield.png"
+                alt="Mascote GuardianShield"
+                style={{ width: '160px', maxWidth: '70%', margin: '0 auto 16px', display: 'block', filter: 'drop-shadow(0 12px 24px rgba(0,0,0,0.25))' }}
+              />
+              <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '8px' }}>
+                <span style={{ color: 'var(--accent-cyan)' }}>Guardian</span>{' '}
+                <span style={{ color: 'var(--accent-blue)' }}>Shield</span>
+              </h1>
+              <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+                Proteção inteligente e controle parental para a segurança digital da sua família.
+              </p>
+            </div>
+
+            <button
+              disabled
+              title="Em breve"
+              className="btn btn-ghost"
+              style={{ width: '100%', marginBottom: '14px', opacity: 0.55, cursor: 'not-allowed' }}
+            >
+              🔒 Continuar com Google (em breve)
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '4px 0 18px', color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase' }}>
+              <div style={{ flex: 1, height: '1px', background: 'var(--border-color)' }} />
+              ou
+              <div style={{ flex: 1, height: '1px', background: 'var(--border-color)' }} />
+            </div>
+
+            <button className="btn btn-primary" style={{ width: '100%', marginBottom: '18px' }} onClick={() => setView('login')}>
+              Fazer Login
+            </button>
+
+            <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              Ainda não tem uma conta?{' '}
+              <button
+                onClick={() => setView('register')}
+                style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
+              >
+                Cadastre-se
+              </button>
+            </p>
+          </>
+        )}
+
+        {view === 'login' && (
+          <form onSubmit={handleLogin}>
+            <h2 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: '4px', color: 'var(--accent-cyan)' }}>Entrar na conta</h2>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '22px' }}>Use o e-mail e senha da sua família.</p>
+
+            <label style={labelStyle}>E-mail</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@email.com" style={inputStyle} autoFocus />
+
+            <label style={labelStyle}>Senha</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={inputStyle} />
+
+            {error && <p style={{ color: 'var(--accent-rose)', fontSize: '0.82rem', marginBottom: '14px' }}>⚠️ {error}</p>}
+
+            <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
+              {loading ? 'Entrando...' : 'Entrar'}
+            </button>
+
+            <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '18px' }}>
+              Ainda não tem uma conta?{' '}
+              <button type="button" onClick={() => { setView('register'); setError(''); }} style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 'inherit' }}>
+                Cadastre-se
+              </button>
+            </p>
+          </form>
+        )}
+
+        {view === 'register' && (
+          <form onSubmit={handleRegister}>
+            <h2 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: '4px', color: 'var(--accent-cyan)' }}>Criar conta da família</h2>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '22px' }}>Essa conta vai controlar o pareamento com o celular do seu filho.</p>
+
+            <label style={labelStyle}>E-mail</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@email.com" style={inputStyle} autoFocus />
+
+            <label style={labelStyle}>Senha</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="No mínimo 6 caracteres" style={inputStyle} />
+
+            <label style={labelStyle}>Confirmar senha</label>
+            <input type="password" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} placeholder="••••••••" style={inputStyle} />
+
+            {error && <p style={{ color: 'var(--accent-rose)', fontSize: '0.82rem', marginBottom: '14px' }}>⚠️ {error}</p>}
+
+            <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
+              {loading ? 'Cadastrando...' : 'Cadastrar'}
+            </button>
+
+            <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '18px' }}>
+              Já tem uma conta?{' '}
+              <button type="button" onClick={() => { setView('login'); setError(''); }} style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 'inherit' }}>
+                Entrar
+              </button>
+            </p>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  // Sessão: sem token salvo, o app inteiro vira a tela de Boas-vindas/Login/Cadastro
+  // (AuthGate) — inclusive pra quem já usava o app sem conta antes dessa versão (essa é
+  // a "instalação já existente pede cadastro" pedida). Recarrega a página inteira depois
+  // de logar (mais simples e confiável que tentar reautenticar o socket já aberto).
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('guardianshield_token'));
+  const handleAuthenticated = (token, email) => {
+    localStorage.setItem('guardianshield_token', token);
+    localStorage.setItem('guardianshield_email', email);
+    window.location.reload();
+  };
+  const handleLogout = () => {
+    if (!window.confirm('Sair da conta? Você vai precisar entrar de novo com seu e-mail e senha.')) return;
+    localStorage.removeItem('guardianshield_token');
+    localStorage.removeItem('guardianshield_email');
+    window.location.reload();
+  };
+
+  // Modal "Conta": e-mail logado, renomear o celular pareado, sair da conta — tudo num
+  // lugar só (mesmo padrão do app nativo: AccountFragment).
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [deviceNameInput, setDeviceNameInput] = useState('');
+  const [deviceNameSavedNotice, setDeviceNameSavedNotice] = useState(false);
+
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [state, setState] = useState(null);
@@ -71,9 +285,14 @@ export default function App() {
   const [emergencyPhoneInput, setEmergencyPhoneInput] = useState('');
   const [emergencyPhoneSavedNotice, setEmergencyPhoneSavedNotice] = useState(false);
 
+  // Confirmação breve do botão "Zerar tempo usado hoje" (ver handleResetDailyUsage)
+  const [resetUsageNotice, setResetUsageNotice] = useState(false);
+
   // Rotinas (Hora de Dormir/Estudo) — modal de editar início/fim. `scheduleModalOpen`
   // guarda qual chave está sendo editada ('bedtimeSchedule'|'studySchedule') ou null.
-  // Só persiste (parent:set_schedule); ainda não bloqueia o aparelho nesses horários.
+  // Persiste via parent:set_schedule; o backend passa a bloquear o aparelho de verdade
+  // nesses horários (ver activeScheduleBlock/isWithinSchedule em server.js), sincronizado
+  // pro nativo a cada poll de /api/tasks/sync.
   const [scheduleModalOpen, setScheduleModalOpen] = useState(null);
   const [scheduleDraft, setScheduleDraft] = useState({ start: '', end: '' });
 
@@ -134,12 +353,19 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Só faz sentido no app instalado (Android) — a versão web (guardian-shield.
+    // oguiazevedo.com/) é sempre a mais nova assim que republico, não tem apk pra
+    // baixar nem atualizar.
+    if (!Capacitor.isNativePlatform()) return;
     checkForAppUpdates().then(info => {
       if (info?.hasUpdate) setUpdateInfo(info);
     });
   }, []);
 
   useEffect(() => {
+    // Sem sessão: nem tenta conectar — a pessoa está vendo a tela de Boas-vindas/Login
+    // (AuthGate), sem necessidade de gastar uma conexão anônima à toa.
+    if (!authToken) return;
     let activeSocket = null;
 
     const tryConnect = (index) => {
@@ -155,7 +381,8 @@ export default function App() {
       const s = io(targetUrl, {
         reconnectionAttempts: 2,
         timeout: 3000,
-        transports: ['websocket', 'polling']
+        transports: ['websocket', 'polling'],
+        auth: authToken ? { token: authToken } : undefined
       });
 
       s.on('connect', () => {
@@ -200,6 +427,10 @@ export default function App() {
     socket?.emit('parent:request_pair_code', { serverUrl: 'http://192.168.1.114:3001' });
   };
 
+  if (!authToken) {
+    return <AuthGate onAuthenticated={handleAuthenticated} />;
+  }
+
   if (!state) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: '16px', padding: '20px', textAlign: 'center' }}>
@@ -219,12 +450,27 @@ export default function App() {
     socket?.emit('parent:set_daily_limit', Number(minutes));
   };
 
+  // "Zerar tempo usado hoje" — pra corrigir depois de usar o tempo da criança testando
+  // o app, por exemplo. Zera na hora no painel (usedMinutesToday do dispositivo) e o
+  // celular da criança zera o contador local de verdade no próximo poll (~60s).
+  const handleResetDailyUsage = () => {
+    socket?.emit('parent:reset_daily_usage');
+    setResetUsageNotice(true);
+    setTimeout(() => setResetUsageNotice(false), 3000);
+  };
+
   const handleTogglePauseAll = () => {
     socket?.emit('parent:toggle_pause_all', !screenTime.isPauseAllActive);
   };
 
   const handleToggleAppBlock = (appId, currentStatus) => {
     socket?.emit('parent:toggle_app_block', { appId, isBlocked: !currentStatus });
+  };
+
+  // "Sempre disponível": o app fica liberado no celular do filho mesmo com Pausa
+  // Geral, tarefas pendentes, tempo esgotado ou o bloqueio individual acima ativos.
+  const handleToggleAppAlwaysAvailable = (appId, currentStatus) => {
+    socket?.emit('parent:toggle_app_always_available', { appId, isAlwaysAvailable: !currentStatus });
   };
 
   const handleAddBlockedDomain = (e) => {
@@ -430,8 +676,79 @@ export default function App() {
             {screenTime.isPauseAllActive ? <Lock size={18} /> : <Unlock size={18} />}
             {screenTime.isPauseAllActive ? 'PAUSA GERAL ATIVA' : 'Bloquear Tudo'}
           </button>
+
+          <button
+            className="btn btn-ghost"
+            onClick={() => { setDeviceNameInput(deviceInfo.name || ''); setShowAccountModal(true); }}
+            title="Sua conta"
+            style={{ padding: '10px' }}
+          >
+            <User size={18} />
+          </button>
         </div>
       </header>
+
+      {/* MODAL: CONTA — e-mail logado, renomear o celular pareado, sair da conta */}
+      {showAccountModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 10000,
+          background: 'var(--overlay-scrim)', backdropFilter: 'blur(12px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div className="glass-panel" style={{ padding: '28px', maxWidth: '420px', width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <User size={20} style={{ color: 'var(--accent-cyan)' }} /> Sua conta
+              </h3>
+              <button onClick={() => setShowAccountModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                <X size={22} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+              Essa conta controla o pareamento e os dados desta família.
+            </p>
+            <div style={{ background: 'var(--surface-2)', padding: '12px 14px', borderRadius: '10px', fontWeight: 700, marginBottom: '24px', wordBreak: 'break-all' }}>
+              {localStorage.getItem('guardianshield_email') || '—'}
+            </div>
+
+            <h4 style={{ fontSize: '0.95rem', marginBottom: '4px' }}>📱 Celular do filho</h4>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+              Escolha um nome pra identificar o aparelho pareado.
+            </p>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+              <input
+                type="text"
+                value={deviceNameInput}
+                onChange={(e) => setDeviceNameInput(e.target.value)}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: '10px',
+                  border: '1px solid var(--border-color)', background: 'var(--surface-2)',
+                  color: 'var(--text-primary)', outline: 'none', fontSize: '0.9rem'
+                }}
+              />
+              <button
+                className="btn btn-primary"
+                disabled={!deviceNameInput.trim()}
+                onClick={() => {
+                  socket?.emit('parent:rename_device', { deviceId: deviceInfo.id, name: deviceNameInput.trim() });
+                  setDeviceNameSavedNotice(true);
+                  setTimeout(() => setDeviceNameSavedNotice(false), 3000);
+                }}
+              >
+                Salvar
+              </button>
+            </div>
+            {deviceNameSavedNotice && (
+              <p style={{ fontSize: '0.8rem', color: 'var(--accent-emerald)', marginBottom: '20px' }}>Nome atualizado!</p>
+            )}
+
+            <button className="btn btn-danger" style={{ width: '100%', marginTop: '20px' }} onClick={handleLogout}>
+              <LogOut size={18} /> Sair da conta
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* BANNER DE ATUALIZAÇÃO DIRETA */}
       {updateInfo && (
@@ -593,6 +910,22 @@ export default function App() {
                   <Plus size={20} />
                 </button>
               </div>
+
+              {/* "Zerar tempo usado hoje" — pra corrigir o contador depois de usar o
+                  tempo da criança testando o app, por exemplo, sem precisar mexer no
+                  limite diário em si. */}
+              <button
+                type="button"
+                onClick={handleResetDailyUsage}
+                style={{
+                  width: '100%', marginTop: '18px', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px',
+                  background: 'var(--surface-1)', border: '1px solid var(--border-color)',
+                  color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer'
+                }}
+              >
+                <RefreshCw size={16} /> {resetUsageNotice ? 'Tempo zerado!' : 'Zerar tempo usado hoje'}
+              </button>
             </div>
 
             <div className="glass-panel" style={{ padding: '24px' }}>
@@ -845,32 +1178,56 @@ export default function App() {
                       padding: '16px', borderRadius: '14px',
                       background: app.isBlocked ? 'rgba(244, 63, 94, 0.08)' : 'var(--surface-1)',
                       border: `1px solid ${app.isBlocked ? 'rgba(244, 63, 94, 0.3)' : 'var(--border-color)'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                      display: 'flex', flexDirection: 'column', gap: '12px'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{
-                        width: '42px', height: '42px', borderRadius: '12px',
-                        background: app.isBlocked ? 'rgba(244, 63, 94, 0.2)' : 'rgba(249, 115, 22, 0.2)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: app.isBlocked ? 'var(--accent-rose)' : 'var(--accent-blue)'
-                      }}>
-                        <Smartphone size={22} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '42px', height: '42px', borderRadius: '12px',
+                          background: app.isBlocked ? 'rgba(244, 63, 94, 0.2)' : 'rgba(249, 115, 22, 0.2)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: app.isBlocked ? 'var(--accent-rose)' : 'var(--accent-blue)'
+                        }}>
+                          <Smartphone size={22} />
+                        </div>
+                        <div>
+                          <h4 style={{ fontSize: '0.95rem', fontWeight: 600 }}>{app.name}</h4>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{app.category || 'Aplicativo'}</span>
+                        </div>
                       </div>
-                      <div>
-                        <h4 style={{ fontSize: '0.95rem', fontWeight: 600 }}>{app.name}</h4>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{app.category || 'Aplicativo'}</span>
-                      </div>
+
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={app.isBlocked}
+                          onChange={() => handleToggleAppBlock(app.id, app.isBlocked)}
+                        />
+                        <span className="slider"></span>
+                      </label>
                     </div>
 
-                    <label className="switch">
-                      <input
-                        type="checkbox"
-                        checked={app.isBlocked}
-                        onChange={() => handleToggleAppBlock(app.id, app.isBlocked)}
-                      />
-                      <span className="slider"></span>
-                    </label>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      paddingTop: '12px', borderTop: '1px solid var(--border-color)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <ShieldCheck size={16} style={{ color: app.isAlwaysAvailable ? 'var(--accent-emerald)' : 'var(--text-muted)' }} />
+                        <div>
+                          <span style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block' }}>Sempre disponível</span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Ignora Pausa Geral, tarefas e tempo esgotado</span>
+                        </div>
+                      </div>
+
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={!!app.isAlwaysAvailable}
+                          onChange={() => handleToggleAppAlwaysAvailable(app.id, app.isAlwaysAvailable)}
+                        />
+                        <span className="slider"></span>
+                      </label>
+                    </div>
                   </div>
                 ))}
               </div>
